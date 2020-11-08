@@ -64,11 +64,10 @@ dt <- dt[dt$TripL_mode_none == 0, ]
 # convert Korean to Number
 for(c in colnames(option)[colnames(option) != "Number"]){
   for(i in which(!is.na(option[[c]]))){
-    cat(option[i, c])
-    # cat(option[[c]], option[["Number"]], dt))
-    # cat(gsub(option[[c]], option[["Number"]], dt))
+    # cat(option[i, c], sep="\n")
+    # cat(option[i, "Number"], sep="\n")
+    dt[] <- lapply(dt, function(x) gsub(option[i, c], option[i, "Number"], x, fixed=TRUE)) #fixed=TRUE means non-regex
   }
 }
-
 ```
 
