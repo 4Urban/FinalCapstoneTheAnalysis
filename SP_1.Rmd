@@ -1,0 +1,74 @@
+---
+title: "The SP survey"
+output: html_notebook
+---
+
+Start Date: 2020-11-07
+Finish Date: Ongoing
+
+
+### 원시데이터 입력
+
+```{r}
+colnm <- c("ResponseID", "TripL_mode_car", "TripL_mode_expbus", "TripL_mode_train", "TripL_mode_expt", "TripL_mode_plane", "TripL_mode_ship", "TripL_mode_none", "TripL_expt", "TripL_plane", "Trip_made", "Conv", "Eco", "Safe", "Trans", "New", "Sens", "SpA150_1", "SpA150_2", "SpA150_3", "SpA150_4", "SpA250_1", "SpA250_2", "SpA250_3", "SpA250_4", "SpA300_1", "SpA300_2", "SpA300_3", "SpA300_4", "SpB150_1", "SpB150_2", "SpB150_3", "SpB150_4", "SpB250_1", "SpB250_2", "SpB250_3", "SpB250_4", "SpB300_1", "SpB300_2", "SpB300_3", "SpB300_4", "Gender", "Byear", "HHsize", "Job", "Inc", "Ncars", "TypeError", "Type", "StartDate", "SubmitDate", "NetworkID")
+
+coltp <- c("text", "text", "text", "text", "text", "text", "text", "text", "numeric", "numeric", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "numeric", "text", "text", "text", "text")
+
+library(readxl)
+data <- read_excel("responses.xlsx", col_names=colnm, col_types=coltp, skip=1)
+# View(data)
+
+remove(colnm)
+remove(coltp)
+```
+
+
+
+### 선택지 한국어 -> 데이터화
+
+```{r}
+library(readxl)
+level <- read_excel("Level.xlsx")
+option <- read_excel("Option.xlsx")
+```
+
+
+
+### 데이터 1차 가공
+
+```{r}
+# filter only needed columns
+colnm_f <- c("ResponseID", "TripL_mode_car", "TripL_mode_expbus", "TripL_mode_train", "TripL_mode_expt", "TripL_mode_plane", "TripL_mode_ship", "TripL_mode_none", "TripL_expt", "TripL_plane", "Trip_made", "Conv", "Eco", "Safe", "Trans", "New", "Sens", "SpA150_1","SpA150_2", "SpA150_3", "SpA150_4", "SpA250_1", "SpA250_2", "SpA250_3", "SpA250_4", "SpA300_1", "SpA300_2", "SpA300_3", "SpA300_4", "SpB150_1", "SpB150_2", "SpB150_3", "SpB150_4", "SpB250_1", "SpB250_2", "SpB250_3", "SpB250_4", "SpB300_1", "SpB300_2", "SpB300_3", "SpB300_4", "Gender", "Byear", "HHsize", "Job", "Inc", "Ncars", "Type")
+
+dt <- data[colnames(data) %in% colnm_f]
+remove(colnm_f)
+
+
+# convert T/F(NA) to 1/0
+colnm_t <- c("TripL_mode_car", "TripL_mode_expbus", "TripL_mode_train", "TripL_mode_expt", "TripL_mode_plane", "TripL_mode_ship", "TripL_mode_none")
+
+for(c in colnames(dt)){
+  if(c %in% colnm_t){
+    dt[[c]][!is.na(dt[[c]])] <- 1
+    dt[[c]][is.na(dt[[c]])] <- 0
+  }
+}
+remove(c)
+remove(colnm_t)
+
+
+# remove non-target-sample
+dt <- dt[dt$TripL_mode_none == 0, ]
+
+
+# convert Korean to Number
+for(c in colnames(option)[colnames(option) != "Number"]){
+  for(i in which(!is.na(option[[c]]))){
+    cat(option[i, c])
+    # cat(option[[c]], option[["Number"]], dt))
+    # cat(gsub(option[[c]], option[["Number"]], dt))
+  }
+}
+
+```
+
