@@ -1,13 +1,39 @@
 ---
 title: "The SP survey"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 Start Date: 2020-11-07
 Finish Date: Ongoing
 
 
-### 원시데이터 입력
+
+### 전반적으로 쓰이는 패키지 호출
+```{r, message=FALSE}
+library(dplyr) #Data Modifying, Grouping, and so on
+library(tidyr) #Reshape between Wide and Long form
+library(mlogit) #Logit Model
+
+library(ggplot2) #Draw Plot
+# library(plotly) #More detailed Plot
+# library(gridExtra) #Show table in Plot
+# library(ggpubr) #Show multiple Plots
+
+library(showtext) #show Korean in Plot
+#---cf. https://www.facebook.com/groups/krstudy/permalink/1546879218819678/?comment_id=1549629918544608
+# system(command="wget wget http://cdn.naver.com/naver/NanumFont/fontfiles/NanumFont_TTF_ALL.zip")
+# system(command="unzip NanumFont_TTF_ALL.zip -d NanumFont")
+# system(command="rm -f NanumFont_TTF_ALL.zip")
+# 
+font_add(family="NanumGothic", regular="NanumFont/NanumGothic.ttf", bold="NanumFont/NanumGothicBold.ttf")
+showtext_auto()
+```
+
+
+## 원시데이터 입력
+### 설문 응답(.xlxs) 자료 입력
 
 ```{r}
 colnm <- c("ResponseID", "TripL_mode_car", "TripL_mode_expbus", "TripL_mode_train", "TripL_mode_expt", "TripL_mode_plane", "TripL_mode_ship", "TripL_mode_none", "TripL_expt", "TripL_plane", "Trip_made", "Conv", "Eco", "Safe", "Trans", "New", "Sens", "SpA150_1", "SpA150_2", "SpA150_3", "SpA150_4", "SpA250_1", "SpA250_2", "SpA250_3", "SpA250_4", "SpA300_1", "SpA300_2", "SpA300_3", "SpA300_4", "SpB150_1", "SpB150_2", "SpB150_3", "SpB150_4", "SpB250_1", "SpB250_2", "SpB250_3", "SpB250_4", "SpB300_1", "SpB300_2", "SpB300_3", "SpB300_4", "Gender", "Byear", "HHsize", "Job", "Inc", "Ncars", "TypeError", "Type", "StartDate", "SubmitDate", "NetworkID")
@@ -15,7 +41,8 @@ colnm <- c("ResponseID", "TripL_mode_car", "TripL_mode_expbus", "TripL_mode_trai
 coltp <- c("text", "text", "text", "text", "text", "text", "text", "text", "numeric", "numeric", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "numeric", "text", "text", "text", "text")
 
 library(readxl)
-data <- read_excel("responses.xlsx", col_names=colnm, col_types=coltp, skip=1)
+data <- suppressWarnings(
+  read_excel("responses.xlsx", col_names=colnm, col_types=coltp, skip=1))
 # View(data)
 
 remove(colnm)
@@ -23,8 +50,7 @@ remove(coltp)
 ```
 
 
-
-### 선택지 한국어 -> 데이터화
+### 선택지 한국어 → 데이터화 기준
 
 ```{r}
 library(readxl)
@@ -33,8 +59,7 @@ option <- read_excel("Option.xlsx")
 ```
 
 
-
-### 데이터 1차 가공
+## 데이터 1차 가공
 
 ```{r}
 # filter only needed columns
@@ -61,13 +86,165 @@ remove(colnm_t)
 dt <- dt[dt$TripL_mode_none == 0, ]
 
 
-# convert Korean to Number
+# convert Korean to Number(char)
 for(c in colnames(option)[colnames(option) != "Number"]){
   for(i in which(!is.na(option[[c]]))){
     # cat(option[i, c], sep="\n")
     # cat(option[i, "Number"], sep="\n")
     dt[] <- lapply(dt, function(x) gsub(option[i, c], option[i, "Number"], x, fixed=TRUE)) #fixed=TRUE means non-regex
   }
+  remove(i)
 }
+remove(c)
+
+
+# change Character to Number except columns(ResponseID, Type)
+dt <- dt %>% mutate_at(vars(-ResponseID, -Type), as.numeric)
+
+
+# change+add Byear to Age
+dt$Age <- 2020 - dt$Byear
+```
+
+
+## 표본 특성
+
+표본의 특성을 분석
+
+Plot Template @[R graph gallery](https://www.r-graph-gallery.com/128-ring-or-donut-plot.html)
+
+```{r}
+AttType <- dt[, "Type"]
+AttTrip <- dt[, match("TripL_mode_car", colnames(dt)):
+                match("Trip_made", colnames(dt))]
+AttLatent <- dt[, match("Conv", colnames(dt)):
+                  match("Sens", colnames(dt))]
+AttPerson <- dt[, match("Gender", colnames(dt)):
+                  match("Age", colnames(dt))]
+
+# Total Number of Samples
+nOfSmp <- nrow(dt)
+
+# Number of Types: A, B
+AttType %>% count(Type)
+```
+
+
+### 개인 사회경제 변수
+
+```{r, message=FALSE}
+# Percentage of Gender: Male(1), Female(2)
+
+# groups <- c(quo(Gender), quo(Age), quo(HHsize), quo(Job))
+# for(i in seq_along(groups)){
+#   AttPerson %>% group_by(!!groups[[i]]) %>%
+#     summarise(percentage=round(n()/nOfSmp*100, 2)) %>%
+#     print()
+# }
+# remove(groups)
+
+test <- AttPerson %>% group_by(Gender) %>%
+  summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
+test
+
+
+# Compute the cumulative percentages (top of each rectangle)
+test$ymax <- cumsum(test$percentage)
+
+# Compute the bottom of each rectangle
+test$ymin <- c(0, head(test$ymax, n=-1))
+
+# Compute label position
+test$labelPosition <- (test$ymax + test$ymin) / 2
+
+# Compute a good label
+test$label <- paste0(test$Gender, "\n", test$count, "명\n", test$percentage, "%")
+
+# Make the plot
+ggplot(test, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Gender)) + 
+  geom_rect() + 
+  geom_text(x=1, aes(y=labelPosition, label=label, color=Gender), size=6) + 
+  # x: label position (inner / outer)
+  coord_polar(theta="y") + # Pie Chart
+  xlim(c(-1, 4)) + # Donut Hole
+  theme_void() +
+  theme(legend.position = "none", text=element_text(family="NanumGothic"))
+
+AttPerson %>% group_by(Age) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttPerson %>% group_by(HHsize) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttPerson %>% group_by(Job) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+```
+
+
+### 개인 통행특성 변수
+
+```{r}
+# Have_experienced(1), None(0)
+AttTrip %>% group_by(TripL_mode_car) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_mode_expbus) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_mode_train) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_mode_expt) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_mode_plane) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_mode_ship) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_expt) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttTrip %>% group_by(TripL_plane) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+```
+
+
+### 개인 성향 변수
+
+```{r}
+AttLatent %>% group_by(Conv) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttLatent %>% group_by(Eco) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttLatent %>% group_by(Safe) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttLatent %>% group_by(Trans) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttLatent %>% group_by(New) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+
+AttLatent %>% group_by(Sens) %>%
+  summarise(percentage=round(n()/nOfSmp*100,2))
+```
+
+
+## 로짓 모형
+
+### 데이터 2차 가공 to Long form
+
+```{r}
+colnm_sp <- c("SpA150_1","SpA150_2", "SpA150_3", "SpA150_4", "SpA250_1", "SpA250_2", "SpA250_3", "SpA250_4", "SpA300_1", "SpA300_2", "SpA300_3", "SpA300_4", "SpB150_1", "SpB150_2", "SpB150_3", "SpB150_4", "SpB250_1", "SpB250_2", "SpB250_3", "SpB250_4", "SpB300_1", "SpB300_2", "SpB300_3", "SpB300_4")
+
+dtLong <- dt %>% gather_('Question', 'Select', colnm_sp)
+
+# enter the "level" according to the Question Type
+
+View(dtLong)
 ```
 
