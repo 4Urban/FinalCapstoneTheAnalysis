@@ -14,7 +14,9 @@ Finish Date: Ongoing
 ```{r, message=FALSE}
 library(dplyr) #Data Modifying, Grouping, and so on
 library(tidyr) #Reshape between Wide and Long form
+
 library(mlogit) #Logit Model
+library(lmtest) #Logit Model fittness
 
 library(ggplot2) #Draw Plot
 # library(plotly) #More detailed Plot
@@ -45,8 +47,7 @@ data <- suppressWarnings(
   read_excel("responses.xlsx", col_names=colnm, col_types=coltp, skip=1))
 # View(data)
 
-remove(colnm)
-remove(coltp)
+remove(colnm, coltp)
 ```
 
 
@@ -78,8 +79,7 @@ for(c in colnames(dt)){
     dt[[c]][is.na(dt[[c]])] <- 0
   }
 }
-remove(c)
-remove(colnm_t)
+remove(c, colnm_t)
 
 
 # remove non-target-sample
@@ -87,15 +87,14 @@ dt <- dt[dt$TripL_mode_none == 0, ]
 
 
 # convert Korean to Number(char)
-for(c in colnames(option)[colnames(option) != "Number"]){
+for(c in colnames(option)[!(colnames(option) %in% c("Number", "SelectN"))]){
   for(i in which(!is.na(option[[c]]))){
     # cat(option[i, c], sep="\n")
     # cat(option[i, "Number"], sep="\n")
     dt[] <- lapply(dt, function(x) gsub(option[i, c], option[i, "Number"], x, fixed=TRUE)) #fixed=TRUE means non-regex
   }
-  remove(i)
 }
-remove(c)
+remove(i, c)
 
 
 # change Character to Number except columns(ResponseID, Type)
@@ -233,18 +232,140 @@ AttLatent %>% group_by(Sens) %>%
   summarise(percentage=round(n()/nOfSmp*100,2))
 ```
 
+### 불필요한 변수 삭제
+
+```{r}
+remove(data, nOfSmp, AttType, AttPerson, AttTrip ,AttLatent)
+```
+
+
 
 ## 로짓 모형
 
-### 데이터 2차 가공 to Long form
+### 데이터 2차 가공 merge with Alternative Specific Variables' levels
 
 ```{r}
 colnm_sp <- c("SpA150_1","SpA150_2", "SpA150_3", "SpA150_4", "SpA250_1", "SpA250_2", "SpA250_3", "SpA250_4", "SpA300_1", "SpA300_2", "SpA300_3", "SpA300_4", "SpB150_1", "SpB150_2", "SpB150_3", "SpB150_4", "SpB250_1", "SpB250_2", "SpB250_3", "SpB250_4", "SpB300_1", "SpB300_2", "SpB300_3", "SpB300_4")
 
-dtLong <- dt %>% gather_('Question', 'Select', colnm_sp)
+dtMerged <- dt %>% gather_('Question', 'Select', colnm_sp)
+remove(colnm_sp)
+
 
 # enter the "level" according to the Question Type
+level$Question <- paste("Sp", level$Type, level$Dist, "_", level$Qq_ID, sep="")
 
-View(dtLong)
+# dtLong$Qtype <- substr(dtLong$Question, 3, 3)
+# dtLong$Qdist <- as.numeric(substr(dtLong$Question, 4, 6))
+# dtLong$QqqID <- as.numeric(substr(dtLong$Question, 8, 8))
+
+dtMerged <- merge(dtMerged, level[, which(colnames(level)=="Dist"):ncol(level)], 
+           by="Question")
+
+
+# remove non-answered-question
+dtMerged <- dtMerged[!is.na(dtMerged$Select), ]
+
+
+# convert Number to Name(character)
+# tbl <- cbind()
+dtMerged <- merge(dtMerged, option[which(!is.na(option["SpN"])),
+                                   which(colnames(option) %in% c("Number", "SpN"))], by.x="Select", by.y="Number")
+
+# filter unneeded columns
+dtMerged <- dtMerged[, which(!(colnames(dtMerged) %in% c("Select", "Question", "TripL_mode_none", "Type")))]
+
+# change 'SpN' column name to 'Choice'
+dtMerged <- rename(dtMerged, "Choice"="SpN")
+str(dtMerged)
+```
+
+
+### 데이터 3차 가공 to mlogit.Wide form
+
+mlogit [기본 설명](https://rdrr.io/rforge/mlogit/f/vignettes/c2.formula.data.Rmd)
+
+```{r}
+vars <- which(colnames(dtMerged) %in% c("Time_expt", "Time_plane", "Time_hyper", "Cost_expt", "Cost_plane", "Cost_hyper"))
+dtWide <- mlogit.data(dtMerged, shape="wide", choice="Choice", varying=vars, sep="_", id.var="ResponseID", opposite=c("Cost", "Time"))
+
+# head(index(dtWide))
+#---chid: choice situation index
+#---alt: alternative index
+#---id: individual index
+
+head(dtWide)
+remove(vars)
+```
+
+- `character` 문자형
+
+- `categorical` 범주형
+  - `t/f` 참/거짓
+  - `nominal` 명칭척도
+  - `ordinal` 순위척도  
+  
+- `continuous` 연속형
+  - `interval` 간격척도
+  - `ratio` 비율척도
+
+***
+
+|이름 | 유형  | 설명  | 내용  |
+-|-|-|-
+|`ResponseID       ` | char  | 응답ID  | 고유값 |
+|`TripL_mode_car   ` | t/f  | 3개년 내 장거리 승용차/승합차 탑승 여부 | 참/거짓 |
+|`TripL_mode_expbus` | t/f  | 3개년 내 장거리 고속·시외버스 탑승 여부 | 참/거짓 |
+|`TripL_mode_train ` | t/f  | 3개년 내 장거리 일반철도 탑승 여부 | 참/거짓 |
+|`TripL_mode_expt  ` | t/f  | 3개년 내 장거리 고속철도 탑승 여부 | 참/거짓 |
+|`TripL_mode_plane ` | t/f  | 3개년 내 장거리 항공 탑승 여부 | 참/거짓 |
+|`TripL_mode_ship  ` | t/f  | 3개년 내 장거리 선박 탑승 여부 | 참/거짓 |
+|`TripL_expt       ` | t/f  | 3개년 내 고속철도 탑승 여부 | 참/거짓 |
+|`TripL_plane      ` | t/f  | 3개년 내 항공 장거리 탑승 여부 | 참/거짓 |
+|`Trip_made        ` | num  | 월 평균 장거리 이동 왕복 횟수  | 횟수 |
+|`Conv             ` | ordi  | 편의성 | 1 < 7 |
+|`Eco              ` | ordi  | 친환경성  | 1 < 7 |
+|`Safe             ` | ordi  | 안전성  | 1 < 7 |
+|`Trans            ` | ordi  | 환승 여부  | 1 < 7 |
+|`New              ` | ordi  | 최신 기술 사용 여부 | 1 < 7 |
+|`Sens             ` | ordi  | 감성 | 1 < 7 |
+|`Gender           ` | nomi  | 성별 | 남자, 여자 |
+|`Byear            ` | num  | 출생연도 | 연도 |
+|`HHsize           ` | num  | 가구원수 | 명수 |
+|`Job              ` | nomi  | 직업 | 무직/학생(8) |
+|`Inc              ` | inte  | 소득 | 100만원 미만(1) |
+|`Ncars            ` | t/f  | 자가용 보유 여부  | 참/거짓 |
+|`Age              ` | rati  | 나이  | 나이 |
+|`Dist             ` | rati  | 거리  | km |
+|`Time             ` | rati  | 시간  | 분 |
+|`Cost             ` | rati  | 비용  | 원 |
+|`Choice           ` | nomi  | 선택  | 고속철도(expt), 항공(plane), 하이퍼루프(hyper) |
+
+
+### 효용함수 설정
+
+```{r}
+f <- mFormula(Choice ~ Cost | Inc | Time)
+```
+
+
+### 로짓모형
+
+```{r}
+m <- mlogit(f, dtWide)
+summary(m)
+
+lrtest(m)
+# waldtest(m)
+# scoretest(m)
+# 
+# 
+# statpval <- function(x){
+#     if (inherits(x, "anova")) result <- as.matrix(x)[2, c("Chisq", "Pr(>Chisq)")]
+#     if (inherits(x, "htest")) result <- c(x$statistic, x$p.value)
+#     names(result) <- c("stat", "p-value")
+#     round(result, 3)
+# }
+# 
+# statpval(m)
 ```
 
