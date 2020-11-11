@@ -103,6 +103,7 @@ dt <- dt %>% mutate_at(vars(-ResponseID, -Type), as.numeric)
 
 # change+add Byear to Age
 dt$Age <- 2020 - dt$Byear
+dt <- dt[, which(!(colnames(dt) == "Byear"))]
 ```
 
 
@@ -141,6 +142,36 @@ AttType %>% count(Type)
 #     print()
 # }
 # remove(groups)
+
+getPlot <- function(Att, Criteria) {
+test <- AttPerson %>% group_by(Gender) %>%
+  summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
+test
+
+
+# Compute the cumulative percentages (top of each rectangle)
+test$ymax <- cumsum(test$percentage)
+
+# Compute the bottom of each rectangle
+test$ymin <- c(0, head(test$ymax, n=-1))
+
+# Compute label position
+test$labelPosition <- (test$ymax + test$ymin) / 2
+
+# Compute a good label
+test$label <- paste0(test$Gender, "\n", test$count, "명\n", test$percentage, "%")
+
+# Make the plot
+ggplot(test, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Gender)) + 
+  geom_rect() + 
+  geom_text(x=1, aes(y=labelPosition, label=label, color=Gender), size=6) + 
+  # x: label position (inner / outer)
+  coord_polar(theta="y") + # Pie Chart
+  xlim(c(-1, 4)) + # Donut Hole
+  theme_void() +
+  theme(legend.position = "none", text=element_text(family="NanumGothic"))  
+}
+
 
 test <- AttPerson %>% group_by(Gender) %>%
   summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
@@ -182,7 +213,7 @@ AttPerson %>% group_by(Job) %>%
 
 ### 개인 통행특성 변수
 
-```{r}
+```{r, message=FALSE}
 # Have_experienced(1), None(0)
 AttTrip %>% group_by(TripL_mode_car) %>%
   summarise(percentage=round(n()/nOfSmp*100,2))
@@ -212,7 +243,7 @@ AttTrip %>% group_by(TripL_plane) %>%
 
 ### 개인 성향 변수
 
-```{r}
+```{r, message=FALSE}
 AttLatent %>% group_by(Conv) %>%
   summarise(percentage=round(n()/nOfSmp*100,2))
 
@@ -276,25 +307,112 @@ dtMerged <- dtMerged[, which(!(colnames(dtMerged) %in% c("Select", "Question", "
 
 # change 'SpN' column name to 'Choice'
 dtMerged <- rename(dtMerged, "Choice"="SpN")
+
 str(dtMerged)
+remove(dt, level, option)
 ```
+
+
+### 응답 특성
+
+```{r}
+AttSp <- dtMerged[, which(colnames(dtMerged) %in% c("Dist", "Choice"))]
+
+# Total Number of Samples
+nOfSmp <- AttSp %>% count(Dist)
+nOfSmp <- nOfSmp[1, 2]
+
+# Number of Choices by Distance: expt, plane, hyper
+AttSp %>% group_by(Dist, Choice) %>%
+  summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
+AttSp %>% group_by(Choice) %>%
+  summarise(count=n(), percentage=round(n()/nrow(AttSp)*100,2))
+# 
+# SmmAttSp[which(SmmAttSp$Dist == 150), ]
+# # Percentage of Gender: Male(1), Female(2)
+# 
+# 
+# test <- AttPerson %>% group_by(Gender) %>%
+#   summarise(count=n(), percentage=round(n()/nOfSmp[1,2]*100,2))
+# test
+# 
+# 
+# # Compute the cumulative percentages (top of each rectangle)
+# test$ymax <- cumsum(test$percentage)
+# 
+# # Compute the bottom of each rectangle
+# test$ymin <- c(0, head(test$ymax, n=-1))
+# 
+# # Compute label position
+# test$labelPosition <- (test$ymax + test$ymin) / 2
+# 
+# # Compute a good label
+# test$label <- paste0(test$Gender, "\n", test$count, "명\n", test$percentage, "%")
+# 
+# # Make the plot
+# ggplot(test, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Gender)) + 
+#   geom_rect() + 
+#   geom_text(x=1, aes(y=labelPosition, label=label, color=Gender), size=6) + 
+#   # x: label position (inner / outer)
+#   coord_polar(theta="y") + # Pie Chart
+#   xlim(c(-1, 4)) + # Donut Hole
+#   theme_void() +
+#   theme(legend.position = "none", text=element_text(family="NanumGothic"))
+# 
+# AttPerson %>% group_by(Age) %>%
+#   summarise(percentage=round(n()/nOfSmp*100,2))
+# 
+# AttPerson %>% group_by(HHsize) %>%
+#   summarise(percentage=round(n()/nOfSmp*100,2))
+# 
+# AttPerson %>% group_by(Job) %>%
+#   summarise(percentage=round(n()/nOfSmp*100,2))
+```
+
+
 
 
 ### 데이터 3차 가공 to mlogit.Wide form
 
-mlogit [기본 설명](https://rdrr.io/rforge/mlogit/f/vignettes/c2.formula.data.Rmd)
+mlogit [기본 설명](https://cran.r-project.org/web/packages/mlogit/vignettes/c2.formula.data.html)
+
+분석 및 해석하는 방법 [@Youtube](https://youtu.be/-Cp_KP9mq94)
 
 ```{r}
+# Divide by Distance
+dtMergedD <- dtMerged %>% group_split(Dist)
+
+
+# Convert those to mlogit.Wide form
 vars <- which(colnames(dtMerged) %in% c("Time_expt", "Time_plane", "Time_hyper", "Cost_expt", "Cost_plane", "Cost_hyper"))
+
 dtWide <- mlogit.data(dtMerged, shape="wide", choice="Choice", varying=vars, sep="_", id.var="ResponseID", opposite=c("Cost", "Time"))
+dtWide250 <- mlogit.data(as.data.frame(dtMergedD[[2]]), shape="wide", choice="Choice", varying=vars, sep="_", id.var="ResponseID", opposite=c("Cost", "Time"))
+
+
+# without Plane in 150km
+varsP <- which(colnames(dtMerged) %in% c("Time_expt", "Time_hyper", "Cost_expt", "Cost_hyper"))
+
+dtWide150 <- mlogit.data(as.data.frame(dtMergedD[[1]]), shape="wide", choice="Choice", varying=varsP, sep="_", id.var="ResponseID", opposite=c("Cost", "Time"))
+
+
+# without Expt in 300km
+varsE <- which(colnames(dtMerged) %in% c("Time_plane", "Time_hyper", "Cost_plane", "Cost_hyper"))
+
+dtExcept <- dtMergedD[[3]][dtMergedD[[3]][, "Choice"] != "expt", ]
+dtWide300 <- mlogit.data(as.data.frame(dtExcept), shape="wide", choice="Choice", varying=varsE, sep="_", id.var="ResponseID", opposite=c("Cost", "Time"))
+
 
 # head(index(dtWide))
 #---chid: choice situation index
 #---alt: alternative index
 #---id: individual index
 
-head(dtWide)
+# head(dtWide)
+# dtWide[1:10, ]
 remove(vars)
+remove(varsP)
+remove(varsE)
 ```
 
 - `character` 문자형
@@ -329,7 +447,6 @@ remove(vars)
 |`New              ` | ordi  | 최신 기술 사용 여부 | 1 < 7 |
 |`Sens             ` | ordi  | 감성 | 1 < 7 |
 |`Gender           ` | nomi  | 성별 | 남자, 여자 |
-|`Byear            ` | num  | 출생연도 | 연도 |
 |`HHsize           ` | num  | 가구원수 | 명수 |
 |`Job              ` | nomi  | 직업 | 무직/학생(8) |
 |`Inc              ` | inte  | 소득 | 100만원 미만(1) |
@@ -341,20 +458,34 @@ remove(vars)
 |`Choice           ` | nomi  | 선택  | 고속철도(expt), 항공(plane), 하이퍼루프(hyper) |
 
 
+
 ### 효용함수 설정
 
 ```{r}
-f <- mFormula(Choice ~ Cost | Inc | Time)
+f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + Conv + Eco + Safe + Trans + New + Sens | Time)
+# f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age | Time)
+# f <- mFormula(Choice ~ Cost | Gender + HHsize + Inc + Ncars + Age | Time)
+# f <- mFormula(Choice ~ Cost + Dist | Gender + HHsize + Inc + Age | Time)
+# f <- mFormula(Choice ~ Cost + Dist | Gender + HHsize + Inc | Time)
+
+# Dist 넣으면 에러 발생
+# f <- mFormula(Choice ~ Dist | Gender + HHsize + Inc | Time)
 ```
 
 
 ### 로짓모형
 
 ```{r}
-m <- mlogit(f, dtWide)
+m <- mlogit(f, dtWide, reflevel="hyper")
 summary(m)
 
-lrtest(m)
+# #fitted: estimated "probabilities to choose each specific mode"
+# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+
+# mn <- with(m, data.frame(Cost=tapply(Cost, index(m)$Choice, mean)))
+
+# lrtest(m)
 # waldtest(m)
 # scoretest(m)
 # 
@@ -367,5 +498,52 @@ lrtest(m)
 # }
 # 
 # statpval(m)
+```
+
+
+```{r}
+m <- mlogit(f, dtWide150, reflevel="hyper")
+summary(m)
+
+#fitted: estimated "probabilities to choose each specific mode"
+# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+```
+
+```{r}
+m <- mlogit(f, dtWide250, reflevel="hyper")
+summary(m)
+
+#fitted: estimated "probabilities to choose each specific mode"
+# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+```
+```{r}
+m <- mlogit(f, dtWide300, reflevel="hyper")
+summary(m)
+
+#fitted: estimated "probabilities to choose each specific mode"
+# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+```
+
+
+### 성향 변수 사이의 상관관계 확인
+
+```{r}
+plot(AttLatent)
+
+library(corrplot)
+corrplot.mixed(cor(AttLatent), upper = "ellipse", lower.col = "black")
+```
+
+
+### 다중공선성 확인
+
+[참고자료](https://mindscale.kr/course/basic-stat-r/collinearity)
+
+```{r}
+library(car)
+data <- subset(dtWide, select = -c(chas, rad))
+lmfit <- lm(medv ~ . , data = data)
+vif(m)
+
 ```
 
