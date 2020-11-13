@@ -110,6 +110,7 @@ dt <- dt[, which(colnames(dt) != "Byear")]
 
 # change+add Age to Age-Interval boolean
 dt$AgeI <- (dt$Age %/% 10) * 10
+dt$Age20 <- ifelse(dt$Age %/% 10 == 2, 1, 0)
 ```
 
 
@@ -126,7 +127,7 @@ AttTrip <- dt[, match("TripL_mode_car", colnames(dt)):
 AttLatent <- dt[, match("Conv", colnames(dt)):
                   match("Sens", colnames(dt))]
 AttPerson <- dt[, match("Gender", colnames(dt)):
-                  match("AgeI", colnames(dt))]
+                  match("Age20", colnames(dt))]
 
 # # Total Number of Samples
 # nOfSmp <- nrow(dt)
@@ -163,8 +164,9 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
   color <- topo.colors(nrow(smmry))
   smmryPlot <- ggplot(smmry, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=color)) +
     geom_rect() +
-    geom_text(x=7, aes(y=labelPosition, label=label, color=color), size=4, check_overlap=TRUE) +
+    geom_text(x=7, aes(y=labelPosition, label=label, color=color), size=7, check_overlap=TRUE) +
     # x: label position (inner / outer)
+    # size: text font size
     coord_polar(theta="y") + # Pie Chart
     xlim(c(-1, 8)) + # Donut Hole
     theme_void() +
@@ -183,10 +185,6 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
     } else if(deparse(substitute(data)) == "AttLatent") {
       dfLikert <- data.frame("Number"=1:7, "Meaning"=c("매우 아니다", "", "", "보통이다", "", "", "매우 그렇다"))
       smmryTbl <- merge(dfLikert, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
-      smmryTbl[is.na(smmryTbl)] <- 0
-      smmryTblPlot <- tableGrob(smmry[, 1:3], rows=NULL, 
-                                cols=c(ifelse(missing(header_str), group_var_str, header_str), "인원(명)", "비율(%)"),
-                                theme=ttheme_default(base_family="NanumGothic"))
     } else { # Label(korean) is not in Option.xlsx
       dfBool <- data.frame("Number"=0:1, "Boolean"=c("없음", "있음"))
       smmryTbl <- merge(dfBool, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
@@ -195,14 +193,14 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
     smmryTblPlot <- tableGrob(smmryTbl, rows=NULL, cols=c("구분",
                                                           ifelse(missing(header_str), group_var_str, header_str),
                                                           "인원(명)", "비율(%)"),
-                              theme=ttheme_default(base_family="NanumGothic"))
+                              theme=ttheme_default(base_family="NanumGothic", base_size=16))
   } else { # when Label(korean) is not needed
     smmryTblPlot <- tableGrob(smmry[, 1:3], rows=NULL, 
                               cols=c(ifelse(missing(header_str), group_var_str, header_str), "인원(명)", "비율(%)"),
-                              theme=ttheme_default(base_family="NanumGothic"))
+                              theme=ttheme_default(base_family="NanumGothic", base_size=16))
   }
 
-  smmryArr <- ggarrange(smmryPlot, smmryTblPlot, ncol = 2, nrow = 1)
+  smmryArr <- ggarrange(smmryPlot, smmryTblPlot, ncol = 2, nrow = 1) # show graph and table together
 
   return(smmryArr)
 }
@@ -215,6 +213,7 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
 getPlot(AttPerson, Gender, "성별", TRUE)
 getPlot(AttPerson, Age, "나이(살)")
 getPlot(AttPerson, AgeI, "나이대(대)")
+getPlot(AttPerson, Age20, "20대 여부", TRUE)
 getPlot(AttPerson, HHsize, "총가구원 수(명)")
 getPlot(AttPerson, Job, "직업", TRUE)
 getPlot(AttPerson, Inc, "월 평균 소득", TRUE)
@@ -227,12 +226,12 @@ getPlot(AttPerson, Ncars, "자동차 소유 여부", TRUE)
 
 ```{r, message=FALSE}
 # Have_experienced(1), None(0)
-getPlot(AttTrip, TripL_mode_car, "최근 3개년 내 장거리 승용차/승합차 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_expbus, "최근 3개년 내 장거리 고속·시외버스 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_train, "최근 3개년 내 장거리 고속철도 이외 일반철도 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_expt, "최근 3개년 내 장거리 고속철도 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_plane, "최근 3개년 내 장거리 국내선 항공 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_ship, "최근 3개년 내 장거리 선박 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_car, "최근 3개년 내 장거리\n승용차/승합차 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_expbus, "최근 3개년 내 장거리\n고속·시외버스 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_train, "최근 3개년 내 장거리\n고속철도 이외 일반철도 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_expt, "최근 3개년 내 장거리\n고속철도 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_plane, "최근 3개년 내 장거리\n국내선 항공 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_ship, "최근 3개년 내 장거리\n선박 탑승 여부", TRUE)
 ```
 
 
@@ -252,7 +251,7 @@ getPlot(AttLatent, Sens, "감성", TRUE)
 
 ```{r}
 # plot(AttLatent)
-corrplot.mixed(cor(AttLatent), upper = "ellipse", lower.col = "black")
+corrplot.mixed(cor(AttLatent), upper = "ellipse", lower.col = "black", tl.cex=2, number.cex=2)
 ```
 
 
@@ -356,7 +355,8 @@ dtWide300 <- mlogit.data(as.data.frame(dtExcept), shape="wide", choice="Choice",
 # head(dtWide)
 # dtWide[1:10, ]
 
-remove(data, dt, level, option, vars, varsP, varsE)
+remove(data, dt, vars, varsP, varsE)
+# remove(level, option)
 ```
 
 - `character` 문자형
@@ -396,6 +396,8 @@ remove(data, dt, level, option, vars, varsP, varsE)
 |`Inc              ` | inte  | 소득 | 100만원 미만(1) |
 |`Ncars            ` | t/f  | 자가용 보유 여부  | 참/거짓 |
 |`Age              ` | rati  | 나이  | 나이 |
+|`AgeI             ` | rati  | 나이대  | 대 |
+|`Age20             ` | t/f  | 20대 여부  | 참/거짓 |
 |`Dist             ` | rati  | 거리  | km |
 |`Time             ` | rati  | 시간  | 분 |
 |`Cost             ` | rati  | 비용  | 원 |
@@ -407,11 +409,13 @@ remove(data, dt, level, option, vars, varsP, varsE)
 
 ```{r}
 f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
-f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + Conv + Eco + Safe + Trans + New + Sens | Time)
-# f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age | Time)
-# f <- mFormula(Choice ~ Cost | Gender + HHsize + Inc + Ncars + Age | Time)
-# f <- mFormula(Choice ~ Cost + Dist | Gender + HHsize + Inc + Age | Time)
-# f <- mFormula(Choice ~ Cost + Dist | Gender + HHsize + Inc | Time)
+
+f_ageI <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + AgeI + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+
+f_age20 <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age20 + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+
+# f_latent <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + Conv + Eco + Safe + Trans + New + Sens | Time)
+# f_latnet_ageI <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + AgeI + Conv + Eco + Safe + Trans + New + Sens | Time)
 
 # Dist 넣으면 에러 발생
 # f <- mFormula(Choice ~ Dist | Gender + HHsize + Inc | Time)
@@ -421,8 +425,8 @@ f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + Conv +
 ### 로짓모형
 
 ```{r}
-m <- mlogit(f, dtWide, reflevel="hyper")
-summary(m)
+# m <- mlogit(f, dtWide, reflevel="hyper")
+# summary(m)
 
 # #fitted: estimated "probabilities to choose each specific mode"
 # apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
@@ -444,26 +448,31 @@ summary(m)
 # statpval(m)
 ```
 
+#### 나이 변수 대입
 
 ```{r}
-m <- mlogit(f, dtWide150, reflevel="hyper")
-summary(m)
-
-#fitted: estimated "probabilities to choose each specific mode"
-# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+summary(mlogit(f, dtWide, reflevel="hyper"))
+summary(mlogit(f, dtWide150, reflevel="hyper"))
+# summary(mlogit(f, dtWide250, reflevel="hyper"))
+summary(mlogit(f, dtWide300, reflevel="hyper"))
 ```
 
-```{r}
-m <- mlogit(f, dtWide250, reflevel="hyper")
-summary(m)
 
-#fitted: estimated "probabilities to choose each specific mode"
-# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+#### 나이대 변수 대입
+
+```{r}
+summary(mlogit(f_ageI, dtWide, reflevel="hyper"))
+summary(mlogit(f_ageI, dtWide150, reflevel="hyper"))
+# summary(mlogit(f_ageI, dtWide250, reflevel="hyper"))
+summary(mlogit(f_ageI, dtWide300, reflevel="hyper"))
 ```
-```{r}
-m <- mlogit(f, dtWide300, reflevel="hyper")
-summary(m)
 
-#fitted: estimated "probabilities to choose each specific mode"
-# apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
+
+#### 20대 여부 변수 대입
+
+```{r}
+summary(mlogit(f_age20, dtWide, reflevel="hyper"))
+summary(mlogit(f_age20, dtWide150, reflevel="hyper"))
+# summary(mlogit(f_age20, dtWide250, reflevel="hyper"))
+summary(mlogit(f_age20, dtWide300, reflevel="hyper"))
 ```
