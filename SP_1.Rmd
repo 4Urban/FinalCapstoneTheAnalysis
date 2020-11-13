@@ -20,8 +20,9 @@ library(lmtest) #Logit Model fittness
 
 library(ggplot2) #Draw Plot
 # library(plotly) #More detailed Plot
-# library(gridExtra) #Show table in Plot
-# library(ggpubr) #Show multiple Plots
+library(gridExtra) #Show table in Plot
+library(ggpubr) #Show multiple Plots
+library(corrplot) #Draw Correlation Plot
 
 library(showtext) #show Korean in Plot
 #---cf. https://www.facebook.com/groups/krstudy/permalink/1546879218819678/?comment_id=1549629918544608
@@ -31,20 +32,22 @@ library(showtext) #show Korean in Plot
 # 
 font_add(family="NanumGothic", regular="NanumFont/NanumGothic.ttf", bold="NanumFont/NanumGothicBold.ttf")
 showtext_auto()
+
+# pdf("plots.pdf") #save a plot as PDF that can be edited in InDesign
+# dev.off()
 ```
 
 
 ## 원시데이터 입력
 ### 설문 응답(.xlxs) 자료 입력
 
-```{r}
+```{r, warning=FALSE}
 colnm <- c("ResponseID", "TripL_mode_car", "TripL_mode_expbus", "TripL_mode_train", "TripL_mode_expt", "TripL_mode_plane", "TripL_mode_ship", "TripL_mode_none", "TripL_expt", "TripL_plane", "Trip_made", "Conv", "Eco", "Safe", "Trans", "New", "Sens", "SpA150_1", "SpA150_2", "SpA150_3", "SpA150_4", "SpA250_1", "SpA250_2", "SpA250_3", "SpA250_4", "SpA300_1", "SpA300_2", "SpA300_3", "SpA300_4", "SpB150_1", "SpB150_2", "SpB150_3", "SpB150_4", "SpB250_1", "SpB250_2", "SpB250_3", "SpB250_4", "SpB300_1", "SpB300_2", "SpB300_3", "SpB300_4", "Gender", "Byear", "HHsize", "Job", "Inc", "Ncars", "TypeError", "Type", "StartDate", "SubmitDate", "NetworkID")
 
 coltp <- c("text", "text", "text", "text", "text", "text", "text", "text", "numeric", "numeric", "text", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "text", "numeric", "numeric", "text", "text", "text", "numeric", "text", "text", "text", "text")
 
 library(readxl)
-data <- suppressWarnings(
-  read_excel("responses.xlsx", col_names=colnm, col_types=coltp, skip=1))
+data <- read_excel("responses.xlsx", col_names=colnm, col_types=coltp, skip=1)
 # View(data)
 
 remove(colnm, coltp)
@@ -103,7 +106,10 @@ dt <- dt %>% mutate_at(vars(-ResponseID, -Type), as.numeric)
 
 # change+add Byear to Age
 dt$Age <- 2020 - dt$Byear
-dt <- dt[, which(!(colnames(dt) == "Byear"))]
+dt <- dt[, which(colnames(dt) != "Byear")]
+
+# change+add Age to Age-Interval boolean
+dt$AgeI <- (dt$Age %/% 10) * 10
 ```
 
 
@@ -120,155 +126,134 @@ AttTrip <- dt[, match("TripL_mode_car", colnames(dt)):
 AttLatent <- dt[, match("Conv", colnames(dt)):
                   match("Sens", colnames(dt))]
 AttPerson <- dt[, match("Gender", colnames(dt)):
-                  match("Age", colnames(dt))]
+                  match("AgeI", colnames(dt))]
 
-# Total Number of Samples
-nOfSmp <- nrow(dt)
+# # Total Number of Samples
+# nOfSmp <- nrow(dt)
 
 # Number of Types: A, B
 AttType %>% count(Type)
 ```
 
 
+### 분석 도표 출력 함수 정의
+
+```{r, message=FALSE}
+# Draw Plot of 'data' grouped by 'group_var' and label with 'unit'(Korean)
+getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
+  group_var_str <- deparse(substitute(group_var))
+  group_var_quo <- enquo(group_var)
+  
+  smmry <- data %>% group_by(!!group_var_quo) %>%
+    summarise(Count=n(), Percentage=round(n()/nrow(data)*100,2))
+
+  # Compute the cumulative percentages (top of each rectangle)
+  smmry$ymax <- cumsum(smmry$Percentage)
+  
+  # Compute the bottom of each rectangle
+  smmry$ymin <- c(0, head(smmry$ymax, n=-1))
+  
+  # Compute label position
+  smmry$labelPosition <- (smmry$ymax + smmry$ymin) / 2
+  
+  # Compute a good label
+  smmry$label <- paste0(smmry[[group_var_str]], "\n", smmry$Count, "명, ", smmry$Percentage, "%")
+  
+  # Make the plot
+  color <- topo.colors(nrow(smmry))
+  smmryPlot <- ggplot(smmry, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=color)) +
+    geom_rect() +
+    geom_text(x=7, aes(y=labelPosition, label=label, color=color), size=4, check_overlap=TRUE) +
+    # x: label position (inner / outer)
+    coord_polar(theta="y") + # Pie Chart
+    xlim(c(-1, 8)) + # Donut Hole
+    theme_void() +
+    theme(legend.position = "none", text=element_text(family="NanumGothic"))
+
+  # Show table
+  if(bool_label){
+    if(group_var_str %in% colnames(option)){ # add information about Label(korean) of Number
+      smmryTbl <- merge(option[which(!is.na(option[[group_var_str]])),
+                               which(colnames(option) %in% c("Number", group_var_str))],
+                        smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
+    } else if(group_var_str == "Choice") {
+      smmryTbl <- merge(option[which(!is.na(option[["Sp"]])),
+                               which(colnames(option) %in% c("SpN", "Sp"))],
+                        smmry[, 1:3], by.x="SpN", by.y=group_var_str, all.x=TRUE, sort=FALSE) #Left Outer Join
+    } else if(deparse(substitute(data)) == "AttLatent") {
+      dfLikert <- data.frame("Number"=1:7, "Meaning"=c("매우 아니다", "", "", "보통이다", "", "", "매우 그렇다"))
+      smmryTbl <- merge(dfLikert, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
+      smmryTbl[is.na(smmryTbl)] <- 0
+      smmryTblPlot <- tableGrob(smmry[, 1:3], rows=NULL, 
+                                cols=c(ifelse(missing(header_str), group_var_str, header_str), "인원(명)", "비율(%)"),
+                                theme=ttheme_default(base_family="NanumGothic"))
+    } else { # Label(korean) is not in Option.xlsx
+      dfBool <- data.frame("Number"=0:1, "Boolean"=c("없음", "있음"))
+      smmryTbl <- merge(dfBool, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
+    }
+    smmryTbl[is.na(smmryTbl)] <- 0
+    smmryTblPlot <- tableGrob(smmryTbl, rows=NULL, cols=c("구분",
+                                                          ifelse(missing(header_str), group_var_str, header_str),
+                                                          "인원(명)", "비율(%)"),
+                              theme=ttheme_default(base_family="NanumGothic"))
+  } else { # when Label(korean) is not needed
+    smmryTblPlot <- tableGrob(smmry[, 1:3], rows=NULL, 
+                              cols=c(ifelse(missing(header_str), group_var_str, header_str), "인원(명)", "비율(%)"),
+                              theme=ttheme_default(base_family="NanumGothic"))
+  }
+
+  smmryArr <- ggarrange(smmryPlot, smmryTblPlot, ncol = 2, nrow = 1)
+
+  return(smmryArr)
+}
+```
+
+
 ### 개인 사회경제 변수
 
 ```{r, message=FALSE}
-# Percentage of Gender: Male(1), Female(2)
-
-# groups <- c(quo(Gender), quo(Age), quo(HHsize), quo(Job))
-# for(i in seq_along(groups)){
-#   AttPerson %>% group_by(!!groups[[i]]) %>%
-#     summarise(percentage=round(n()/nOfSmp*100, 2)) %>%
-#     print()
-# }
-# remove(groups)
-
-getPlot <- function(Att, Criteria) {
-test <- AttPerson %>% group_by(Gender) %>%
-  summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
-test
-
-
-# Compute the cumulative percentages (top of each rectangle)
-test$ymax <- cumsum(test$percentage)
-
-# Compute the bottom of each rectangle
-test$ymin <- c(0, head(test$ymax, n=-1))
-
-# Compute label position
-test$labelPosition <- (test$ymax + test$ymin) / 2
-
-# Compute a good label
-test$label <- paste0(test$Gender, "\n", test$count, "명\n", test$percentage, "%")
-
-# Make the plot
-ggplot(test, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Gender)) + 
-  geom_rect() + 
-  geom_text(x=1, aes(y=labelPosition, label=label, color=Gender), size=6) + 
-  # x: label position (inner / outer)
-  coord_polar(theta="y") + # Pie Chart
-  xlim(c(-1, 4)) + # Donut Hole
-  theme_void() +
-  theme(legend.position = "none", text=element_text(family="NanumGothic"))  
-}
-
-
-test <- AttPerson %>% group_by(Gender) %>%
-  summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
-test
-
-
-# Compute the cumulative percentages (top of each rectangle)
-test$ymax <- cumsum(test$percentage)
-
-# Compute the bottom of each rectangle
-test$ymin <- c(0, head(test$ymax, n=-1))
-
-# Compute label position
-test$labelPosition <- (test$ymax + test$ymin) / 2
-
-# Compute a good label
-test$label <- paste0(test$Gender, "\n", test$count, "명\n", test$percentage, "%")
-
-# Make the plot
-ggplot(test, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Gender)) + 
-  geom_rect() + 
-  geom_text(x=1, aes(y=labelPosition, label=label, color=Gender), size=6) + 
-  # x: label position (inner / outer)
-  coord_polar(theta="y") + # Pie Chart
-  xlim(c(-1, 4)) + # Donut Hole
-  theme_void() +
-  theme(legend.position = "none", text=element_text(family="NanumGothic"))
-
-AttPerson %>% group_by(Age) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttPerson %>% group_by(HHsize) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttPerson %>% group_by(Job) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
+getPlot(AttPerson, Gender, "성별", TRUE)
+getPlot(AttPerson, Age, "나이(살)")
+getPlot(AttPerson, AgeI, "나이대(대)")
+getPlot(AttPerson, HHsize, "총가구원 수(명)")
+getPlot(AttPerson, Job, "직업", TRUE)
+getPlot(AttPerson, Inc, "월 평균 소득", TRUE)
+getPlot(AttPerson, Ncars, "자동차 소유 여부", TRUE)
 ```
+
 
 
 ### 개인 통행특성 변수
 
 ```{r, message=FALSE}
 # Have_experienced(1), None(0)
-AttTrip %>% group_by(TripL_mode_car) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_mode_expbus) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_mode_train) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_mode_expt) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_mode_plane) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_mode_ship) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_expt) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttTrip %>% group_by(TripL_plane) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
+getPlot(AttTrip, TripL_mode_car, "최근 3개년 내 장거리 승용차/승합차 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_expbus, "최근 3개년 내 장거리 고속·시외버스 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_train, "최근 3개년 내 장거리 고속철도 이외 일반철도 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_expt, "최근 3개년 내 장거리 고속철도 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_plane, "최근 3개년 내 장거리 국내선 항공 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_ship, "최근 3개년 내 장거리 선박 탑승 여부", TRUE)
 ```
 
 
 ### 개인 성향 변수
 
 ```{r, message=FALSE}
-AttLatent %>% group_by(Conv) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttLatent %>% group_by(Eco) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttLatent %>% group_by(Safe) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttLatent %>% group_by(Trans) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttLatent %>% group_by(New) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
-
-AttLatent %>% group_by(Sens) %>%
-  summarise(percentage=round(n()/nOfSmp*100,2))
+getPlot(AttLatent, Conv, "편의성", TRUE)
+getPlot(AttLatent, Eco, "친환경성", TRUE)
+getPlot(AttLatent, Safe, "안전성", TRUE)
+getPlot(AttLatent, Trans, "환승 여부", TRUE)
+getPlot(AttLatent, New, "최신 기술 사용 여부", TRUE)
+getPlot(AttLatent, Sens, "감성", TRUE)
 ```
 
-### 불필요한 변수 삭제
+
+### 개인 성향 변수 사이의 상관관계 및 다중공선성 확인
 
 ```{r}
-remove(data, nOfSmp, AttType, AttPerson, AttTrip ,AttLatent)
+# plot(AttLatent)
+corrplot.mixed(cor(AttLatent), upper = "ellipse", lower.col = "black")
 ```
-
 
 
 ## 로짓 모형
@@ -298,78 +283,38 @@ dtMerged <- dtMerged[!is.na(dtMerged$Select), ]
 
 
 # convert Number to Name(character)
-# tbl <- cbind()
 dtMerged <- merge(dtMerged, option[which(!is.na(option["SpN"])),
                                    which(colnames(option) %in% c("Number", "SpN"))], by.x="Select", by.y="Number")
+
 
 # filter unneeded columns
 dtMerged <- dtMerged[, which(!(colnames(dtMerged) %in% c("Select", "Question", "TripL_mode_none", "Type")))]
 
+
 # change 'SpN' column name to 'Choice'
 dtMerged <- rename(dtMerged, "Choice"="SpN")
 
+
 str(dtMerged)
-remove(dt, level, option)
 ```
 
 
 ### 응답 특성
 
-```{r}
+```{r, message=FALSE}
 AttSp <- dtMerged[, which(colnames(dtMerged) %in% c("Dist", "Choice"))]
 
 # Total Number of Samples
-nOfSmp <- AttSp %>% count(Dist)
-nOfSmp <- nOfSmp[1, 2]
+# nOfSmp <- AttSp %>% count(Dist)
+# nOfSmp <- nOfSmp[1, 2]
 
 # Number of Choices by Distance: expt, plane, hyper
-AttSp %>% group_by(Dist, Choice) %>%
-  summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
-AttSp %>% group_by(Choice) %>%
-  summarise(count=n(), percentage=round(n()/nrow(AttSp)*100,2))
-# 
-# SmmAttSp[which(SmmAttSp$Dist == 150), ]
-# # Percentage of Gender: Male(1), Female(2)
-# 
-# 
-# test <- AttPerson %>% group_by(Gender) %>%
-#   summarise(count=n(), percentage=round(n()/nOfSmp[1,2]*100,2))
-# test
-# 
-# 
-# # Compute the cumulative percentages (top of each rectangle)
-# test$ymax <- cumsum(test$percentage)
-# 
-# # Compute the bottom of each rectangle
-# test$ymin <- c(0, head(test$ymax, n=-1))
-# 
-# # Compute label position
-# test$labelPosition <- (test$ymax + test$ymin) / 2
-# 
-# # Compute a good label
-# test$label <- paste0(test$Gender, "\n", test$count, "명\n", test$percentage, "%")
-# 
-# # Make the plot
-# ggplot(test, aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Gender)) + 
-#   geom_rect() + 
-#   geom_text(x=1, aes(y=labelPosition, label=label, color=Gender), size=6) + 
-#   # x: label position (inner / outer)
-#   coord_polar(theta="y") + # Pie Chart
-#   xlim(c(-1, 4)) + # Donut Hole
-#   theme_void() +
-#   theme(legend.position = "none", text=element_text(family="NanumGothic"))
-# 
-# AttPerson %>% group_by(Age) %>%
-#   summarise(percentage=round(n()/nOfSmp*100,2))
-# 
-# AttPerson %>% group_by(HHsize) %>%
-#   summarise(percentage=round(n()/nOfSmp*100,2))
-# 
-# AttPerson %>% group_by(Job) %>%
-#   summarise(percentage=round(n()/nOfSmp*100,2))
+# AttSp %>% group_by(Dist, Choice) %>%
+#   summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
+# AttSp %>% group_by(Choice) %>%
+#   summarise(count=n(), percentage=round(n()/nrow(AttSp)*100,2))
+getPlot(AttSp %>% filter(Dist==250), Choice, , TRUE)
 ```
-
-
 
 
 ### 데이터 3차 가공 to mlogit.Wide form
@@ -410,9 +355,8 @@ dtWide300 <- mlogit.data(as.data.frame(dtExcept), shape="wide", choice="Choice",
 
 # head(dtWide)
 # dtWide[1:10, ]
-remove(vars)
-remove(varsP)
-remove(varsE)
+
+remove(data, dt, level, option, vars, varsP, varsE)
 ```
 
 - `character` 문자형
@@ -523,27 +467,3 @@ summary(m)
 #fitted: estimated "probabilities to choose each specific mode"
 # apply(fitted(m, type="probabilities", outcome=FALSE), 2, mean)
 ```
-
-
-### 성향 변수 사이의 상관관계 확인
-
-```{r}
-plot(AttLatent)
-
-library(corrplot)
-corrplot.mixed(cor(AttLatent), upper = "ellipse", lower.col = "black")
-```
-
-
-### 다중공선성 확인
-
-[참고자료](https://mindscale.kr/course/basic-stat-r/collinearity)
-
-```{r}
-library(car)
-data <- subset(dtWide, select = -c(chas, rad))
-lmfit <- lm(medv ~ . , data = data)
-vif(m)
-
-```
-
