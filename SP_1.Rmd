@@ -108,9 +108,13 @@ dt <- dt %>% mutate_at(vars(-ResponseID, -Type), as.numeric)
 dt$Age <- 2020 - dt$Byear
 dt <- dt[, which(colnames(dt) != "Byear")]
 
-# change+add Age to Age-Interval boolean
+# change+add Age to Age-Interval and Boolean
 dt$AgeI <- (dt$Age %/% 10) * 10
 dt$Age20 <- ifelse(dt$Age %/% 10 == 2, 1, 0)
+
+# change+add Job to Boolean
+dt$Job8 <- ifelse(dt$Job == 8, 1, 0)
+
 ```
 
 
@@ -127,7 +131,7 @@ AttTrip <- dt[, match("TripL_mode_car", colnames(dt)):
 AttLatent <- dt[, match("Conv", colnames(dt)):
                   match("Sens", colnames(dt))]
 AttPerson <- dt[, match("Gender", colnames(dt)):
-                  match("Age20", colnames(dt))]
+                  ncol(dt)]
 
 # # Total Number of Samples
 # nOfSmp <- nrow(dt)
@@ -141,7 +145,7 @@ AttType %>% count(Type)
 
 ```{r, message=FALSE}
 # Draw Plot of 'data' grouped by 'group_var' and label with 'unit'(Korean)
-getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
+getPlot <- function(data, group_var, header_str, bool_label=FALSE, label_TF) {
   group_var_str <- deparse(substitute(group_var))
   group_var_quo <- enquo(group_var)
   
@@ -174,9 +178,9 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
 
   # Show table
   if(bool_label){
-    if(group_var_str %in% colnames(option)){ # add information about Label(korean) of Number
-      smmryTbl <- merge(option[which(!is.na(option[[group_var_str]])),
-                               which(colnames(option) %in% c("Number", group_var_str))],
+    if(ifelse(missing(label_TF), group_var_str, label_TF) %in% colnames(option)){ # add information about Label(korean) of Number
+      smmryTbl <- merge(option[which(!is.na(option[[ifelse(missing(label_TF), group_var_str, label_TF)]])),
+                               which(colnames(option) %in% c("Number", ifelse(missing(label_TF), group_var_str, label_TF)))],
                         smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
     } else if(group_var_str == "Choice") {
       smmryTbl <- merge(option[which(!is.na(option[["Sp"]])),
@@ -185,9 +189,9 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
     } else if(deparse(substitute(data)) == "AttLatent") {
       dfLikert <- data.frame("Number"=1:7, "Meaning"=c("매우 아니다", "", "", "보통이다", "", "", "매우 그렇다"))
       smmryTbl <- merge(dfLikert, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
-    } else { # Label(korean) is not in Option.xlsx
-      dfBool <- data.frame("Number"=0:1, "Boolean"=c("없음", "있음"))
-      smmryTbl <- merge(dfBool, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
+    # } else { # Label(korean) is not in Option.xlsx
+    #   dfBool <- data.frame("Number"=0:1, "Boolean"=c("틀림", "맞음"))
+    #   smmryTbl <- merge(dfBool, smmry[, 1:3], by.x="Number", by.y=group_var_str, all.x=TRUE) #Left Outer Join
     }
     smmryTbl[is.na(smmryTbl)] <- 0
     smmryTblPlot <- tableGrob(smmryTbl, rows=NULL, cols=c("구분",
@@ -213,11 +217,12 @@ getPlot <- function(data, group_var, header_str, bool_label=FALSE) {
 getPlot(AttPerson, Gender, "성별", TRUE)
 getPlot(AttPerson, Age, "나이(살)")
 getPlot(AttPerson, AgeI, "나이대(대)")
-getPlot(AttPerson, Age20, "20대 여부", TRUE)
+getPlot(AttPerson, Age20, "20대 여부", TRUE, "TF")
 getPlot(AttPerson, HHsize, "총가구원 수(명)")
 getPlot(AttPerson, Job, "직업", TRUE)
+getPlot(AttPerson, Job8, "무직/학생 여부", TRUE, "TF")
 getPlot(AttPerson, Inc, "월 평균 소득", TRUE)
-getPlot(AttPerson, Ncars, "자동차 소유 여부", TRUE)
+getPlot(AttPerson, Ncars, "자동차 소유 여부", TRUE, "YN")
 ```
 
 
@@ -226,12 +231,12 @@ getPlot(AttPerson, Ncars, "자동차 소유 여부", TRUE)
 
 ```{r, message=FALSE}
 # Have_experienced(1), None(0)
-getPlot(AttTrip, TripL_mode_car, "최근 3개년 내 장거리\n승용차/승합차 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_expbus, "최근 3개년 내 장거리\n고속·시외버스 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_train, "최근 3개년 내 장거리\n고속철도 이외 일반철도 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_expt, "최근 3개년 내 장거리\n고속철도 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_plane, "최근 3개년 내 장거리\n국내선 항공 탑승 여부", TRUE)
-getPlot(AttTrip, TripL_mode_ship, "최근 3개년 내 장거리\n선박 탑승 여부", TRUE)
+getPlot(AttTrip, TripL_mode_car, "최근 3개년 내 장거리\n승용차/승합차 탑승 여부", TRUE, "YN")
+getPlot(AttTrip, TripL_mode_expbus, "최근 3개년 내 장거리\n고속·시외버스 탑승 여부", TRUE, "YN")
+getPlot(AttTrip, TripL_mode_train, "최근 3개년 내 장거리\n고속철도 이외 일반철도 탑승 여부", TRUE, "YN")
+getPlot(AttTrip, TripL_mode_expt, "최근 3개년 내 장거리\n고속철도 탑승 여부", TRUE, "YN")
+getPlot(AttTrip, TripL_mode_plane, "최근 3개년 내 장거리\n국내선 항공 탑승 여부", TRUE, "YN")
+getPlot(AttTrip, TripL_mode_ship, "최근 3개년 내 장거리\n선박 탑승 여부", TRUE, "YN")
 ```
 
 
@@ -308,11 +313,9 @@ AttSp <- dtMerged[, which(colnames(dtMerged) %in% c("Dist", "Choice"))]
 # nOfSmp <- nOfSmp[1, 2]
 
 # Number of Choices by Distance: expt, plane, hyper
-# AttSp %>% group_by(Dist, Choice) %>%
-#   summarise(count=n(), percentage=round(n()/nOfSmp*100,2))
-# AttSp %>% group_by(Choice) %>%
-#   summarise(count=n(), percentage=round(n()/nrow(AttSp)*100,2))
+getPlot(AttSp %>% filter(Dist==150), Choice, , TRUE)
 getPlot(AttSp %>% filter(Dist==250), Choice, , TRUE)
+getPlot(AttSp %>% filter(Dist==300), Choice, , TRUE)
 ```
 
 
@@ -393,6 +396,7 @@ remove(data, dt, vars, varsP, varsE)
 |`Gender           ` | nomi  | 성별 | 남자, 여자 |
 |`HHsize           ` | num  | 가구원수 | 명수 |
 |`Job              ` | nomi  | 직업 | 무직/학생(8) |
+|`Job8             ` | t/f  | 무직/학생 여부  | 참/거짓 |
 |`Inc              ` | inte  | 소득 | 100만원 미만(1) |
 |`Ncars            ` | t/f  | 자가용 보유 여부  | 참/거짓 |
 |`Age              ` | rati  | 나이  | 나이 |
@@ -410,9 +414,11 @@ remove(data, dt, vars, varsP, varsE)
 ```{r}
 f <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
 
-f_ageI <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + AgeI + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+f_AgeI <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + AgeI + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
 
-f_age20 <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age20 + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+f_Age20 <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age20 + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+
+f_Age20_Job8 <- mFormula(Choice ~ Cost | Gender + HHsize + Job8 + Inc + Ncars + Age20 + TripL_mode_car + TripL_mode_expbus + TripL_mode_train + TripL_mode_expt + TripL_mode_plane + TripL_expt + TripL_plane + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
 
 # f_latent <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age + Conv + Eco + Safe + Trans + New + Sens | Time)
 # f_latnet_ageI <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + AgeI + Conv + Eco + Safe + Trans + New + Sens | Time)
@@ -448,7 +454,7 @@ f_age20 <- mFormula(Choice ~ Cost | Gender + HHsize + Job + Inc + Ncars + Age20 
 # statpval(m)
 ```
 
-#### 나이 변수 대입
+#### '나이' 변수 대입
 
 ```{r}
 summary(mlogit(f, dtWide, reflevel="hyper"))
@@ -458,21 +464,44 @@ summary(mlogit(f, dtWide300, reflevel="hyper"))
 ```
 
 
-#### 나이대 변수 대입
+#### '나이대' 변수 대입
 
 ```{r}
-summary(mlogit(f_ageI, dtWide, reflevel="hyper"))
-summary(mlogit(f_ageI, dtWide150, reflevel="hyper"))
-# summary(mlogit(f_ageI, dtWide250, reflevel="hyper"))
-summary(mlogit(f_ageI, dtWide300, reflevel="hyper"))
+summary(mlogit(f_AgeI, dtWide, reflevel="hyper"))
+summary(mlogit(f_AgeI, dtWide150, reflevel="hyper"))
+# summary(mlogit(f_AgeI, dtWide250, reflevel="hyper"))
+summary(mlogit(f_AgeI, dtWide300, reflevel="hyper"))
 ```
 
 
-#### 20대 여부 변수 대입
+#### '20대 여부' 변수 대입
 
 ```{r}
-summary(mlogit(f_age20, dtWide, reflevel="hyper"))
-summary(mlogit(f_age20, dtWide150, reflevel="hyper"))
-# summary(mlogit(f_age20, dtWide250, reflevel="hyper"))
-summary(mlogit(f_age20, dtWide300, reflevel="hyper"))
+summary(mlogit(f_Age20, dtWide, reflevel="hyper"))
+summary(mlogit(f_Age20, dtWide150, reflevel="hyper"))
+# summary(mlogit(f_Age20, dtWide250, reflevel="hyper"))
+summary(mlogit(f_Age20, dtWide300, reflevel="hyper"))
 ```
+
+
+#### '20대 여부' 및 '무직, 학생 여부' 변수 대입
+
+```{r}
+summary(mlogit(f_Age20_Job8, dtWide, reflevel="hyper"))
+summary(mlogit(f_Age20_Job8, dtWide150, reflevel="hyper"))
+summary(mlogit(f_Age20_Job8, dtWide250, reflevel="hyper"))
+summary(mlogit(f_Age20_Job8, dtWide300, reflevel="hyper"))
+```
+
+
+### 효용 함수 정리
+
+```{r}
+f2 <- mFormula(Choice ~ Cost | Gender + HHsize + Job8 + Inc + Ncars + AgeI + Trip_made + Conv + Eco + Safe + Trans + New + Sens | Time)
+
+summary(mlogit(f2, dtWide, reflevel="hyper"))
+summary(mlogit(f2, dtWide150, reflevel="hyper"))
+summary(mlogit(f2, dtWide250, reflevel="hyper"))
+summary(mlogit(f2, dtWide300, reflevel="hyper"))
+```
+
